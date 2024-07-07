@@ -12,6 +12,7 @@ df = data[(data['Pincode'] > 120000) & (data['Pincode'] < 140000)]
 import geopandas as gpd                 #importing map plotting library
 haryana = gpd.read_file('haryana.kml')  #adding map of Haryana
 
+#map link: https://data.opencity.in/dataset/district-maps-for-states-of-india/resource/haryana-districts-map
 #filtering all the datapoints that lie within the map of Haryana
 gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy (df.Longitude, df.Latitude))
 gdf = gdf.set_crs(haryana.crs)
@@ -194,4 +195,5 @@ For 3 datasets, we can analyse (in no order):
 
   3. A cluster was formed with the middle and southern of Haryana (including Delhi NCR) of 1091 datapoints, maximum entries have SONIPAT (165), 
 JHAJJAR (145), REWARI (130), MAHENDRAGARH (119). Most were deliveries (973).
+
 '''
