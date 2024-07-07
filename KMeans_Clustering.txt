@@ -1,0 +1,197 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+data = pd.read_csv ("clustering_data.csv", low_memory = False)
+data = data.dropna()                    #dropping NA values
+data = data.drop_duplicates()           #removing duplicates
+
+#filtering by all possible Haryana values
+df = data[(data['Pincode'] > 120000) & (data['Pincode'] < 140000)] 
+
+import geopandas as gpd                 #importing map plotting library
+haryana = gpd.read_file('haryana.kml')  #adding map of Haryana
+
+#filtering all the datapoints that lie within the map of Haryana
+gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy (df.Longitude, df.Latitude))
+gdf = gdf.set_crs(haryana.crs)
+df = gdf[gdf.within(haryana.unary_union)]
+print (df)
+
+#converting dataframe to numpy arrays, converting to float, making a list for geoplotting
+lat = df.iloc[:,9].values; lat0 = []
+lon = df.iloc[:,10].values; lon0 = []
+for i in range(lon.shape[0]):
+    lat[i] = float(lat[i])
+    lon[i] = float(lon[i])
+    lat0.append(lat[i])
+    lon0.append(lon[i])
+
+#plotting the map and all datapoints
+data = {
+    'Latitude': lat,  # Example latitude data
+    'Longitude': lon  # Example longitude data
+}
+geometry = gpd.points_from_xy(data['Longitude'], data['Latitude'])
+gdf = gpd.GeoDataFrame(data, geometry= geometry)
+fig, ax = plt.subplots(figsize=(6, 6))
+haryana.plot(ax=ax, color='lightblue', edgecolor='k', linewidth=0.5)
+gdf.plot(ax=ax, color='red', marker='o', markersize=10, label='Your Data')
+plt.show()
+
+#function for random datapoint selection
+import random
+def random_datapoints (k,lon,lat):
+    a = np.zeros(k)
+    points = np.zeros ((k,2))
+    for i in range (k):
+        a = random.randint (0,lon.shape[0]-1)
+        points[i] = [lon[a], lat[a]]
+    return points
+
+#calculating distance from random datapoint for every value and returning an array containing numbers from (0,k-1) indicating classification
+def euclid_dist (k,lon,lat,z):
+    m = lon.shape[0]
+    clusters = np.zeros (m)
+    x = z[:,0]; y = z[:,1]
+    for i in range (m):
+        dist = np.zeros((k));
+        for j in range (k):
+            dist[j] = np.sqrt((lon[i] - x[j])**2 + (lat[i] - y[j])**2)
+            if (j==0):
+                min = dist[j]
+                clusters[i] = j
+                
+            elif (dist[j] < min):
+                min = dist[j]
+                clusters[i] = j
+    return clusters      
+
+#returning k number of arrays containing datapoints in each cluster
+def clusters (k,lon, lat, z):
+    a = euclid_dist (k,lon,lat,z)
+    num_in_clstr = np.zeros(k)
+    arrays = [[] for _ in range(k)]
+    
+    for i in range (a.shape[0]):
+        for j in range (k):
+            if (a[i]== j):
+                arrays[j].append([lon[i],lat[i]])
+                num_in_clstr[j] += 1
+    return arrays, num_in_clstr
+
+#calculating centroid of each cluster
+def centroid (k,lon,lat,z):
+    clstr,_ = clusters (k,lon,lat,z)
+    mu = np.zeros((k,2))
+    for i in range (k):
+        x = (clstr[i])
+        if (len(clstr[i]) != 0):
+            mu[i] = np.mean(clstr[i], axis = 0)
+        else:
+            mu[i] = 0
+    return mu
+
+#generating centroids and modifying clusters for i iterations
+def loop (k,lon,lat,num_i):
+    z = random_datapoints (k,lon,lat)
+    for i in range (num_i):
+        c,_ = clusters (k,lon,lat,z)
+        z = centroid (k,lon,lat,z)
+    return z,c
+
+#ensuring each cluster has atleast one value by generating random datapoints continuously
+def call_till_nonzero(i):
+    while True:
+        final,c = loop (i,lon,lat,20)
+        n=0
+        for j in range(i):
+            if (len(c[j]) != 0):
+                n+=1       
+        if (n==i):
+            break     
+    return final,c
+
+#calculating inertia for each k value
+def variance (k,lon,lat,z):
+    c,num = clusters(k,lon,lat,z)
+    mu = np.zeros ((k,2))
+    var = np.zeros ((k,2))
+    for i in range(k): 
+        if (len(c[i]) != 0):
+            mu[i] = np.mean(c[i], axis = 0)
+        else:
+            mu[i] = 0
+    
+    for m in range (k):
+        for i in range (int(num[m])):
+            var[m] = var[m] + (mu[m] - c[m][i])**2
+        if (num[m] == 0):
+            var[m] = 0   
+    return var
+
+def variance_sum (k,lon,lat,z):
+    var = variance (k,lon,lat,z)
+    sum_x = 0; sum_y = 0
+    for i in range (k):
+        sum_x += var[i,0]
+        sum_y += var[i,1]
+    return sum_x + sum_y
+
+#finally calling all functions to achieve kmeans
+n = np.zeros (10)
+for i in range (1,10):
+    f,_ = call_till_nonzero (i)
+    n[i] = variance_sum (i,lon,lat,f)
+
+#printing values of inertia for k = 1 to 9
+print(n)
+
+#getting elbow curve
+plt.plot(np.arange(1,10) ,n[1:])
+plt.show()
+
+#Best value from the elbow curve is 3
+#plotting graph for k=3
+def graph (z,c):
+    c[0] = np.asarray (c[0])
+    c[1] = np.asarray (c[1])
+    c[2] = np.asarray (c[2])
+    
+    fig, ax = plt.subplots(figsize=(6, 6))
+    haryana.plot(ax=ax, color='oldlace', edgecolor='k', linewidth=0.5)
+    ax.scatter(c[0][:,0], c[0][:,1], linewidths = 0.25, color = 'darkmagenta')
+    ax.scatter(c[1][:,0], c[1][:,1], linewidths = 0.25, color = 'steelblue')
+    ax.scatter(c[2][:,0], c[2][:,1], linewidths = 0.25, color = 'darkred')
+    ax.scatter(z[:,0], z[:,1], linewidths = 10, marker = 'x', color = 'orange')
+    plt.show()
+
+z,c = call_till_nonzero(3)
+graph (z,c)
+
+#filtering dataframe into 3 based on final clusters and analysing
+def c_conversion(c):
+    longitude = []
+    for i in range (len(c)):
+        longitude.append((c[i][0]))
+    return longitude
+
+def dataframe (i):
+    dframe = df[df['Longitude'].isin(c_conversion(c[i]))]
+    print(dframe)
+    print(dframe['District'].value_counts())
+    print(dframe['Delivery'].value_counts())
+
+dataframe (0)
+dataframe (1)
+dataframe (2)
+
+'''
+For 3 datasets, we can analyse (in no order):
+  1. A cluster was formed with the NE part of Haryana of 631 datapoints, maximum entries have Ambala (128), Kurukshetra (123), Kaithal (110), Yamunanagar (109). Most were deliveries (569).
+
+  2. A cluster was formed with the NW and middle part of Haryana of 547 datapoints, maximum entries have Sirsa (161), Hisar (149), Fatehabad (132), Bhiwani (59). Most were deliveries (530).
+
+  3. A cluster was formed with the middle and southern of Haryana (including Delhi NCR) of 1091 datapoints, maximum entries have SONIPAT (165), 
+JHAJJAR (145), REWARI (130), MAHENDRAGARH (119). Most were deliveries (973).
+'''
